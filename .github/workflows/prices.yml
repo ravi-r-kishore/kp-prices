@@ -1,25 +1,21 @@
 name: Refresh prices
-
 on:
   schedule:
-    # Every 15 min, 03:00-10:59 UTC, Mon-Fri (= 08:30-16:29 IST). GitHub may delay runs by several minutes.
-    - cron: '*/15 3-10 * * 1-5'
+    # Off-peak minutes (GitHub delays :00/:15/:30/:45 runs under load).
+    # 02:07-10:52 UTC = 06:07-14:52 Dubai, weekdays. Covers the 08:30 Dubai brief.
+    - cron: '7,22,37,52 2-10 * * 1-5'
   workflow_dispatch:
-
 permissions:
   contents: write
-
 concurrency:
   group: prices
   cancel-in-progress: false
-
 jobs:
   refresh:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-
       - name: Fetch published Google Sheet and validate
         env:
           SHEET_URL: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSpkMl9p5tFtFG7mHD33xxKM0RPy7oI0jHO7RsuEAlOmiSpFs_mVkLo_trlMgtuJiKe-LZsIpRCdy1p/pub?gid=283017413&single=true&output=csv"
@@ -29,14 +25,11 @@ jobs:
           head -1 new.csv | grep -q '^symbol,google_ticker,price' || { echo "Unexpected header"; exit 1; }
           rows=$(awk -F, 'NR>1 && $1!="" {n++} END{print n+0}' new.csv)
           priced=$(awk -F, 'NR>1 && ($3+0)>0 {n++} END{print n+0}' new.csv)
-          echo "rows=$rows priced=$priced"
           [ "$rows" -ge 50 ] || { echo "Too few rows"; exit 1; }
           [ "$priced" -ge 45 ] || { echo "Too few priced rows"; exit 1; }
           mv new.csv prices.csv
           sheet_time=$(sed -n 2p prices.csv | cut -d, -f8 | tr -d '\r')
-          printf '{"fetched_at_utc":"%s","rows":%s,"rows_priced":%s,"sheet_time":"%s"}\n' \
-            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$rows" "$priced" "$sheet_time" > meta.json
-
+          printf '{"fetched_at_utc":"%s","rows":%s,"rows_priced":%s,"sheet_time":"%s"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$rows" "$priced" "$sheet_time" > meta.json
       - name: Commit
         run: |
           git config user.name "github-actions[bot]"
